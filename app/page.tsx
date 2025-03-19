@@ -1,103 +1,276 @@
-import Image from "next/image";
+// File: app/page.tsx
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+
+// Define types for the breath pattern
+interface BreathCycle {
+  inhale: number;
+  exhale: number;
+}
+
+type PhaseType = "idle" | "countdown" | "inhale" | "exhale" | "complete";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [isStarted, setIsStarted] = useState<boolean>(false);
+  const [currentPhase, setCurrentPhase] = useState<PhaseType>("idle");
+  const [countdown, setCountdown] = useState<number>(3);
+  const [progress, setProgress] = useState<number>(0);
+  const [currentCycle, setCurrentCycle] = useState<number>(0);
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+  // Reference to speech synthesis
+  const synth = useRef<SpeechSynthesis | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Vortex Breath pattern (in seconds)
+  const breathPattern: BreathCycle[] = [
+    { inhale: 13, exhale: 13 },
+    { inhale: 8, exhale: 8 },
+    { inhale: 5, exhale: 5 },
+    { inhale: 3, exhale: 3 },
+    { inhale: 2, exhale: 2 },
+    { inhale: 1, exhale: 1 },
+  ];
+
+  // Total duration of the meditation
+  const totalDuration: number = breathPattern.reduce(
+    (total, cycle) => total + cycle.inhale + cycle.exhale,
+    0
+  );
+
+  // Initialize speech synthesis on component mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      synth.current = window.speechSynthesis;
+    }
+
+    return () => {
+      // Cleanup on component unmount
+      if (synth.current) {
+        synth.current.cancel();
+      }
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  // Speak function
+  const speak = (text: string): void => {
+    if (!synth.current) return;
+
+    synth.current.cancel(); // Cancel any ongoing speech
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.8; // Slightly slower speech
+    utterance.pitch = 1;
+    synth.current.speak(utterance);
+  };
+
+  // Start meditation
+  const startMeditation = (): void => {
+    setIsStarted(true);
+    setCurrentPhase("countdown");
+    setCountdown(3);
+    setProgress(0);
+    setCurrentCycle(0);
+
+    // Initial countdown
+    speak("Starting in 3");
+
+    // Start countdown
+    runCountdown();
+  };
+
+  // Run countdown
+  const runCountdown = (): void => {
+    let count = 3;
+
+    const countdownInterval = setInterval(() => {
+      count--;
+      setCountdown(count);
+
+      if (count > 0) {
+        speak(String(count));
+      } else {
+        clearInterval(countdownInterval);
+        startBreathingCycles();
+      }
+    }, 1000);
+  };
+
+  // Start breathing cycles
+  const startBreathingCycles = (): void => {
+    let currentCycleIndex = 0;
+    let phase: "inhale" | "exhale" = "inhale";
+    let timeElapsed = 0;
+    let phaseTimeRemaining = breathPattern[0].inhale;
+
+    speak("Begin. Inhale deeply");
+    setCurrentPhase("inhale");
+    setTimeRemaining(breathPattern[0].inhale);
+
+    const interval = setInterval(() => {
+      const cycle = breathPattern[currentCycleIndex];
+
+      // Update time remaining in the current phase
+      phaseTimeRemaining--;
+      setTimeRemaining(phaseTimeRemaining);
+
+      // Advance time elapsed
+      timeElapsed++;
+      const totalProgress = (timeElapsed / totalDuration) * 100;
+      setProgress(totalProgress);
+
+      // Check if phase is complete
+      if (phaseTimeRemaining <= 0) {
+        // Switch phase
+        if (phase === "inhale") {
+          phase = "exhale";
+          phaseTimeRemaining = cycle.exhale;
+          speak("Exhale slowly");
+          setCurrentPhase("exhale");
+        } else {
+          // Move to the next cycle
+          currentCycleIndex++;
+          setCurrentCycle(currentCycleIndex);
+
+          // Check if meditation is complete
+          if (currentCycleIndex >= breathPattern.length) {
+            clearInterval(interval);
+            setCurrentPhase("complete");
+            speak(
+              "Meditation complete. Take a moment to observe how you feel."
+            );
+            setIsStarted(false);
+            return;
+          }
+
+          // Start new inhale phase
+          phase = "inhale";
+          phaseTimeRemaining = breathPattern[currentCycleIndex].inhale;
+          speak(`Inhale deeply`);
+          setCurrentPhase("inhale");
+        }
+
+        setTimeRemaining(phaseTimeRemaining);
+      }
+    }, 1000);
+
+    timerRef.current = interval;
+  };
+
+  // Stop meditation
+  const stopMeditation = (): void => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    if (synth.current) {
+      synth.current.cancel();
+    }
+    setIsStarted(false);
+    setCurrentPhase("idle");
+    speak("Meditation ended");
+  };
+
+  // Get current instruction text
+  const getInstructionText = (): string => {
+    if (currentPhase === "countdown") {
+      return `Starting in ${countdown}...`;
+    } else if (currentPhase === "inhale") {
+      return `Inhale (${timeRemaining}s)`;
+    } else if (currentPhase === "exhale") {
+      return `Exhale (${timeRemaining}s)`;
+    } else if (currentPhase === "complete") {
+      return "Meditation complete";
+    } else {
+      return "Press Start to begin";
+    }
+  };
+
+  // Get current cycle info
+  const getCycleInfo = (): string => {
+    if (currentPhase === "idle" || currentPhase === "countdown") {
+      return "Vortex Breath Meditation";
+    }
+
+    if (currentPhase === "complete") {
+      return "Practice completed";
+    }
+
+    const currentPatternText = `Cycle ${currentCycle + 1} of ${
+      breathPattern.length
+    }: ${breathPattern[currentCycle].inhale}s inhale, ${
+      breathPattern[currentCycle].exhale
+    }s exhale`;
+    return currentPatternText;
+  };
+
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-gradient-to-b from-blue-50 to-indigo-100">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle className="text-center text-2xl">
+            Vortex Breath Meditation
+          </CardTitle>
+          <CardDescription className="text-center">
+            A phi ratio vortex breathing technique to instantly center your mind
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          <div className="text-center py-8 text-3xl font-semibold text-indigo-700">
+            {getInstructionText()}
+          </div>
+
+          <div className="space-y-2">
+            <Progress value={progress} className="h-2" />
+            <p className="text-center text-sm text-gray-500">
+              {getCycleInfo()}
+            </p>
+          </div>
+
+          {!isStarted && (
+            <div className="space-y-4">
+              <h3 className="font-medium text-sm">
+                The Vortex Breath Pattern:
+              </h3>
+              <ul className="text-sm space-y-1 list-disc pl-4">
+                {breathPattern.map((cycle, index) => (
+                  <li key={index}>
+                    Inhale {cycle.inhale}s, Exhale {cycle.exhale}s
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+
+        <CardFooter className="flex justify-center">
+          {!isStarted ? (
+            <Button
+              onClick={startMeditation}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              Start Meditation
+            </Button>
+          ) : (
+            <Button onClick={stopMeditation} variant="destructive">
+              End Session
+            </Button>
+          )}
+        </CardFooter>
+      </Card>
+    </main>
   );
 }
